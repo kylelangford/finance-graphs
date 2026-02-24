@@ -1,10 +1,179 @@
 import Papa from 'papaparse';
 import type { Transaction } from '../types/transaction';
 
+/**
+ * Parse a numeric value from a string, handling currency symbols, commas, and whitespace
+ */
+function parseNumericValue(value: any): number {
+  if (value === null || value === undefined || value === '') {
+    return 0;
+  }
+
+  // Convert to string and trim whitespace
+  const strValue = String(value).trim();
+
+  if (strValue === '') {
+    return 0;
+  }
+
+  // Remove currency symbols, commas, and other non-numeric characters except . and -
+  const cleaned = strValue
+    .replace(/[$£€¥]/g, '')  // Remove currency symbols
+    .replace(/,/g, '')        // Remove commas (thousand separators)
+    .replace(/\s/g, '')       // Remove whitespace
+    .trim();
+
+  const parsed = parseFloat(cleaned);
+
+  // Return 0 if parsing failed (NaN)
+  return isNaN(parsed) ? 0 : parsed;
+}
+
 export interface ParseResult {
   success: boolean;
   data?: Transaction[];
   error?: string;
+}
+
+export interface CsvPreview {
+  headers: string[];
+  sampleRows: Record<string, string>[];
+}
+
+export interface ColumnMapping {
+  date: string;
+  description: string;
+  amount?: string;       // Single amount column
+  debit?: string;        // Or separate debit column
+  credit?: string;       // Or separate credit column
+  transactionType?: string; // Optional
+}
+
+/**
+ * Extract headers and sample rows from CSV file
+ */
+export function previewCsvFile(file: File): Promise<{ success: boolean; preview?: CsvPreview; error?: string }> {
+  return new Promise((resolve) => {
+    if (!file.name.endsWith('.csv')) {
+      resolve({ success: false, error: 'Please upload a CSV file' });
+      return;
+    }
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      preview: 5, // Only parse first 5 rows for preview
+      complete: (results) => {
+        if (!results.data || results.data.length === 0) {
+          resolve({ success: false, error: 'CSV file is empty' });
+          return;
+        }
+
+        const headers = results.meta.fields || [];
+        const sampleRows = results.data as Record<string, string>[];
+
+        resolve({
+          success: true,
+          preview: { headers, sampleRows },
+        });
+      },
+      error: (error) => {
+        resolve({ success: false, error: `Error parsing CSV: ${error.message}` });
+      },
+    });
+  });
+}
+
+/**
+ * Parse CSV file with custom column mapping
+ */
+export function parseCsvWithMapping(file: File, mapping: ColumnMapping): Promise<ParseResult> {
+  return new Promise((resolve) => {
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        try {
+          const transactions: Transaction[] = (results.data as Record<string, any>[]).map((row, index) => {
+            // Get values using mapping
+            const date = (row[mapping.date] || '').toString().trim();
+            const description = (row[mapping.description] || '').toString().trim();
+
+            let amount: number;
+            let transactionType: 'Debit' | 'Credit';
+
+            // Handle amount based on mapping type
+            if (mapping.amount) {
+              // Single amount column
+              amount = parseNumericValue(row[mapping.amount]);
+
+              // Check transaction type column if provided
+              if (mapping.transactionType && row[mapping.transactionType]) {
+                const typeValue = row[mapping.transactionType].toString().toLowerCase();
+                transactionType = typeValue.includes('credit') ? 'Credit' : 'Debit';
+                amount = transactionType === 'Debit' ? -Math.abs(amount) : Math.abs(amount);
+              } else {
+                // Infer from sign
+                transactionType = amount < 0 ? 'Debit' : 'Credit';
+              }
+            } else if (mapping.debit || mapping.credit) {
+              // Separate debit/credit columns
+              const debitValue = mapping.debit ? parseNumericValue(row[mapping.debit]) : 0;
+              const creditValue = mapping.credit ? parseNumericValue(row[mapping.credit]) : 0;
+
+              // Check which column has a value (non-zero)
+              const hasDebit = debitValue !== 0;
+              const hasCredit = creditValue !== 0;
+
+              if (hasDebit && !hasCredit) {
+                transactionType = 'Debit';
+                amount = -Math.abs(debitValue);
+              } else if (hasCredit && !hasDebit) {
+                transactionType = 'Credit';
+                amount = Math.abs(creditValue);
+              } else if (hasDebit && hasCredit) {
+                // Both have values, use the larger one
+                if (Math.abs(debitValue) >= Math.abs(creditValue)) {
+                  transactionType = 'Debit';
+                  amount = -Math.abs(debitValue);
+                } else {
+                  transactionType = 'Credit';
+                  amount = Math.abs(creditValue);
+                }
+              } else {
+                // Both are zero/empty - skip this row or mark as zero
+                transactionType = 'Debit';
+                amount = 0;
+              }
+            } else {
+              throw new Error('No amount column specified');
+            }
+
+            return {
+              id: `${Date.now()}-${index}`,
+              date,
+              description,
+              amount,
+              transactionType,
+              category: '',
+              raw: row,
+              originalDescription: description,
+            };
+          });
+
+          resolve({ success: true, data: transactions });
+        } catch (error) {
+          resolve({
+            success: false,
+            error: error instanceof Error ? error.message : 'Error parsing CSV',
+          });
+        }
+      },
+      error: (error) => {
+        resolve({ success: false, error: `Error parsing CSV: ${error.message}` });
+      },
+    });
+  });
 }
 
 /**
@@ -60,8 +229,8 @@ export function parseCsvToTransactions(csvContent: string): Transaction[] {
       '';
 
     // Get debit and credit values
-    const debitValue = parseFloat(row.Debit || row.debit || row.DEBIT || '0');
-    const creditValue = parseFloat(row.Credit || row.credit || row.CREDIT || '0');
+    const debitValue = parseNumericValue(row.Debit || row.debit || row.DEBIT);
+    const creditValue = parseNumericValue(row.Credit || row.credit || row.CREDIT);
 
     // Determine transaction type and amount
     let transactionType: 'Debit' | 'Credit';
@@ -76,27 +245,33 @@ export function parseCsvToTransactions(csvContent: string): Transaction[] {
                        transactionTypeValue.slice(1).toLowerCase() as 'Debit' | 'Credit';
 
       // If separate columns exist, use them
-      if (debitValue && !creditValue) {
+      const hasDebitVal = debitValue !== 0;
+      const hasCreditVal = creditValue !== 0;
+
+      if (hasDebitVal && !hasCreditVal) {
         amount = -Math.abs(debitValue); // Debits are negative
-      } else if (creditValue && !debitValue) {
+      } else if (hasCreditVal && !hasDebitVal) {
         amount = Math.abs(creditValue); // Credits are positive
       } else {
         // Fallback to combined amount column
-        amount = parseFloat(row.Amount || row.amount || row.AMOUNT || '0');
+        amount = parseNumericValue(row.Amount || row.amount || row.AMOUNT);
         // Apply sign based on transaction type
         amount = transactionType === 'Debit' ? -Math.abs(amount) : Math.abs(amount);
       }
     } else {
       // Infer from debit/credit columns
-      if (debitValue && !creditValue) {
+      const hasDebitVal = debitValue !== 0;
+      const hasCreditVal = creditValue !== 0;
+
+      if (hasDebitVal && !hasCreditVal) {
         transactionType = 'Debit';
         amount = -Math.abs(debitValue);
-      } else if (creditValue && !debitValue) {
+      } else if (hasCreditVal && !hasDebitVal) {
         transactionType = 'Credit';
         amount = Math.abs(creditValue);
       } else {
         // Fallback to combined amount column
-        amount = parseFloat(row.Amount || row.amount || row.AMOUNT || '0');
+        amount = parseNumericValue(row.Amount || row.amount || row.AMOUNT);
         transactionType = amount < 0 ? 'Debit' : 'Credit';
       }
     }

@@ -6,17 +6,23 @@ const props = defineProps<{
   size?: 'sm' | 'md' | 'lg';
 }>();
 
+// Vibrant color scheme for category badges
 const colorClasses: Record<string, string> = {
-  green: 'bg-green-100 text-green-800',
-  orange: 'bg-orange-100 text-orange-800',
-  blue: 'bg-blue-100 text-blue-800',
-  yellow: 'bg-yellow-100 text-yellow-800',
-  purple: 'bg-purple-100 text-purple-800',
-  red: 'bg-red-100 text-red-800',
-  pink: 'bg-pink-100 text-pink-800',
-  emerald: 'bg-emerald-100 text-emerald-800',
-  gray: 'bg-gray-100 text-gray-800',
-  slate: 'bg-slate-100 text-slate-800',
+  blue: 'bg-blue-500/15 text-blue-700 border border-blue-400/30',
+  purple: 'bg-violet-500/15 text-violet-700 border border-violet-400/30',
+  green: 'bg-emerald-500/15 text-emerald-700 border border-emerald-400/30',
+  yellow: 'bg-amber-500/15 text-amber-700 border border-amber-400/30',
+  pink: 'bg-pink-500/15 text-pink-700 border border-pink-400/30',
+  red: 'bg-rose-500/15 text-rose-700 border border-rose-400/30',
+  indigo: 'bg-indigo-500/15 text-indigo-700 border border-indigo-400/30',
+  emerald: 'bg-teal-500/15 text-teal-700 border border-teal-400/30',
+  gray: 'bg-slate-500/15 text-slate-700 border border-slate-400/30',
+  slate: 'bg-gray-500/15 text-gray-600 border border-gray-400/30',
+  orange: 'bg-orange-500/15 text-orange-700 border border-orange-400/30',
+  teal: 'bg-cyan-500/15 text-cyan-700 border border-cyan-400/30',
+  cyan: 'bg-sky-500/15 text-sky-700 border border-sky-400/30',
+  amber: 'bg-yellow-500/15 text-yellow-700 border border-yellow-400/30',
+  lime: 'bg-lime-500/15 text-lime-700 border border-lime-400/30',
 };
 
 const sizeClasses = {
@@ -27,9 +33,9 @@ const sizeClasses = {
 
 const getColorClass = () => {
   if (!props.category) {
-    return 'bg-gray-100 text-gray-500';
+    return 'bg-gray-100 text-gray-500 border border-gray-200';
   }
-  return colorClasses[props.category.color] || 'bg-gray-100 text-gray-800';
+  return colorClasses[props.category.color] || 'bg-gray-100 text-gray-800 border border-gray-200';
 };
 
 const getSizeClass = () => {

@@ -3,6 +3,7 @@ import { cleanDescriptions } from '../services/claudeService';
 
 export interface CleaningOptions {
   apiKey: string;
+  customPrompt?: string;
   onProgress?: (current: number, total: number) => void;
 }
 
@@ -40,7 +41,7 @@ export async function cleanTransactionDescriptions(
     }
 
     // Call Claude API to clean all descriptions in one batch
-    const result = await cleanDescriptions(descriptions, options.apiKey);
+    const result = await cleanDescriptions(descriptions, options.apiKey, options.customPrompt);
 
     if (!result.success) {
       return {

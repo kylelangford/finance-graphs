@@ -67,7 +67,7 @@ const getColorClassesForType = (type: Notification['type']) => {
         v-for="notification in notifications"
         :key="notification.id"
         :class="[
-          'flex items-start gap-3 p-4 rounded-lg shadow-lg border',
+          'flex items-start gap-3 p-4 rounded-2xl shadow-lg border',
           'min-w-[320px] max-w-md',
           'transition-all duration-300 ease-in-out',
           getColorClassesForType(notification.type).bg,

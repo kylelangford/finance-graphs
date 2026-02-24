@@ -1,75 +1,57 @@
-import { type Ref } from 'vue';
-import { useLocalStorage } from './useLocalStorage';
+import { ref, type Ref } from 'vue';
 import type { Category } from '../types/transaction';
+import { categoriesAPI } from '../utils/apiClient';
 
-const DEFAULT_CATEGORIES: Omit<Category, 'createdAt'>[] = [
-  { id: 'cat-groceries', name: 'Groceries', color: 'green', isDefault: true },
-  { id: 'cat-dining', name: 'Dining & Restaurants', color: 'orange', isDefault: true },
-  { id: 'cat-transportation', name: 'Transportation', color: 'blue', isDefault: true },
-  { id: 'cat-utilities', name: 'Utilities', color: 'yellow', isDefault: true },
-  { id: 'cat-entertainment', name: 'Entertainment', color: 'purple', isDefault: true },
-  { id: 'cat-healthcare', name: 'Healthcare', color: 'red', isDefault: true },
-  { id: 'cat-shopping', name: 'Shopping', color: 'pink', isDefault: true },
-  { id: 'cat-income', name: 'Income', color: 'emerald', isDefault: true },
-  { id: 'cat-transfer', name: 'Transfers', color: 'gray', isDefault: true },
-  { id: 'cat-other', name: 'Other', color: 'slate', isDefault: true },
-];
-
-const categories: Ref<Category[]> = useLocalStorage<Category[]>('categories', []);
+const categories: Ref<Category[]> = ref([]);
 
 export function useCategories() {
   /**
-   * Initialize default categories if none exist
+   * Initialize categories by loading from API
    */
-  const initializeDefaultCategories = () => {
-    if (categories.value.length === 0) {
-      const now = new Date().toISOString();
-      categories.value = DEFAULT_CATEGORIES.map(cat => ({
-        ...cat,
-        createdAt: now,
-      }));
+  const initializeDefaultCategories = async () => {
+    try {
+      categories.value = await categoriesAPI.getAll();
+    } catch (error) {
+      console.error('Failed to load categories:', error);
     }
   };
 
   /**
    * Add a new custom category
    */
-  const addCategory = (name: string, color: string): Category => {
-    const newCategory: Category = {
-      id: `cat-${Date.now()}`,
-      name,
-      color,
-      isDefault: false,
-      createdAt: new Date().toISOString(),
-    };
-
-    categories.value = [...categories.value, newCategory];
-    return newCategory;
+  const addCategory = async (name: string, color: string): Promise<Category | null> => {
+    try {
+      const newCategory = await categoriesAPI.create({ name, color });
+      categories.value = [...categories.value, newCategory];
+      return newCategory;
+    } catch (error) {
+      console.error('Failed to add category:', error);
+      return null;
+    }
   };
 
   /**
    * Update an existing category
    */
-  const updateCategory = (id: string, updates: Partial<Omit<Category, 'id' | 'isDefault' | 'createdAt'>>): boolean => {
-    const index = categories.value.findIndex(cat => cat.id === id);
-    if (index === -1) {
+  const updateCategory = async (id: string, updates: Partial<Omit<Category, 'id' | 'isDefault' | 'createdAt'>>): Promise<boolean> => {
+    try {
+      const updatedCategory = await categoriesAPI.update(id, updates);
+      const index = categories.value.findIndex(cat => cat.id === id);
+      if (index !== -1) {
+        categories.value[index] = updatedCategory;
+        categories.value = [...categories.value];
+      }
+      return true;
+    } catch (error) {
+      console.error('Failed to update category:', error);
       return false;
     }
-
-    categories.value[index] = {
-      ...categories.value[index],
-      ...updates,
-    };
-
-    // Trigger reactivity
-    categories.value = [...categories.value];
-    return true;
   };
 
   /**
    * Delete a category (prevents deletion of default categories)
    */
-  const deleteCategory = (id: string): boolean => {
+  const deleteCategory = async (id: string): Promise<boolean> => {
     const category = categories.value.find(cat => cat.id === id);
 
     // Prevent deletion of default categories
@@ -77,8 +59,14 @@ export function useCategories() {
       return false;
     }
 
-    categories.value = categories.value.filter(cat => cat.id !== id);
-    return true;
+    try {
+      await categoriesAPI.delete(id);
+      categories.value = categories.value.filter(cat => cat.id !== id);
+      return true;
+    } catch (error) {
+      console.error('Failed to delete category:', error);
+      return false;
+    }
   };
 
   /**
@@ -110,14 +98,13 @@ export function useCategories() {
   };
 
   /**
-   * Reset to default categories only
+   * Reset to default categories only (removes custom categories)
    */
-  const resetToDefaults = (): void => {
-    const now = new Date().toISOString();
-    categories.value = DEFAULT_CATEGORIES.map(cat => ({
-      ...cat,
-      createdAt: now,
-    }));
+  const resetToDefaults = async (): Promise<void> => {
+    const customCategories = categories.value.filter(cat => !cat.isDefault);
+    for (const cat of customCategories) {
+      await deleteCategory(cat.id);
+    }
   };
 
   return {

@@ -11,13 +11,16 @@ const emit = defineEmits<{
   close: [];
 }>();
 
-const { settings, setApiKey, clearApiKey, toggleAICleaning } = useSettings();
+const { settings, setApiKey, clearApiKey, toggleAICleaning, getPrompt, setPrompt, resetPrompt, DEFAULT_PROMPT } = useSettings();
 
 // Local state for API key input
 const apiKeyInput = ref(settings.value.claudeApiKey || '');
 const showApiKey = ref(false);
 const testingApiKey = ref(false);
 const testResult = ref<{ success: boolean; message: string } | null>(null);
+
+// Local state for custom prompt
+const customPromptInput = ref(getPrompt());
 
 const isValidApiKey = computed(() => {
   return validateApiKey(apiKeyInput.value);
@@ -37,7 +40,15 @@ const handleSave = () => {
   } else {
     clearApiKey();
   }
+
+  // Save custom prompt
+  setPrompt(customPromptInput.value);
+
   emit('close');
+};
+
+const handleResetPrompt = () => {
+  customPromptInput.value = DEFAULT_PROMPT;
 };
 
 const handleTestApiKey = async () => {
@@ -98,7 +109,7 @@ const handleClearApiKey = () => {
     <!-- Modal -->
     <div class="flex min-h-screen items-center justify-center p-4">
       <div
-        class="relative w-full max-w-2xl bg-white rounded-lg shadow-xl"
+        class="relative w-full max-w-2xl bg-white rounded-2xl shadow-xl"
         @click.stop
       >
         <!-- Header -->
@@ -122,7 +133,7 @@ const handleClearApiKey = () => {
             <h3 class="text-lg font-semibold text-gray-900">AI Features</h3>
 
             <!-- Enable AI Cleaning Toggle -->
-            <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+            <div class="flex items-center justify-between p-4 bg-gray-50 rounded-2xl">
               <div class="flex-1">
                 <div class="font-medium text-gray-900">Clean descriptions with AI</div>
                 <div class="text-sm text-gray-600 mt-1">
@@ -157,7 +168,7 @@ const handleClearApiKey = () => {
                       v-model="apiKeyInput"
                       :type="showApiKey ? 'text' : 'password'"
                       placeholder="sk-ant-..."
-                      class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      class="w-full px-3 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                     />
                     <button
                       @click="showApiKey = !showApiKey"
@@ -176,14 +187,14 @@ const handleClearApiKey = () => {
                   <button
                     @click="handleTestApiKey"
                     :disabled="!hasApiKey || testingApiKey"
-                    class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium whitespace-nowrap"
+                    class="px-4 py-2 bg-purple-600 text-white rounded-full hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium whitespace-nowrap"
                   >
                     {{ testingApiKey ? 'Testing...' : 'Test Key' }}
                   </button>
                   <button
                     v-if="hasApiKey"
                     @click="handleClearApiKey"
-                    class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+                    class="px-4 py-2 bg-gray-200 text-gray-700 rounded-full hover:bg-gray-300 transition-colors font-medium"
                   >
                     Clear
                   </button>
@@ -194,7 +205,7 @@ const handleClearApiKey = () => {
               <div
                 v-if="testResult"
                 :class="[
-                  'p-3 rounded-lg text-sm',
+                  'p-3 rounded-2xl text-sm',
                   testResult.success ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
                 ]"
               >
@@ -214,20 +225,49 @@ const handleClearApiKey = () => {
                 </p>
               </div>
             </div>
+
+            <!-- Custom Prompt Section -->
+            <div class="space-y-3 pt-4 border-t border-gray-200">
+              <div class="flex items-center justify-between">
+                <label class="block">
+                  <span class="text-sm font-medium text-gray-700">AI Cleaning Prompt</span>
+                </label>
+                <button
+                  @click="handleResetPrompt"
+                  class="text-xs text-indigo-600 hover:text-indigo-700 font-medium"
+                >
+                  Reset to Default
+                </button>
+              </div>
+              <textarea
+                v-model="customPromptInput"
+                rows="6"
+                class="w-full px-3 py-2 border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm font-mono"
+                placeholder="Enter your custom prompt for cleaning transaction descriptions..."
+              ></textarea>
+              <div class="text-xs text-gray-600">
+                <p class="mb-1">
+                  Customize how Claude AI cleans your transaction descriptions. The prompt should instruct the AI on what to preserve and how to format the output.
+                </p>
+                <p class="text-gray-500">
+                  <strong>Note:</strong> The system will automatically add numbered input descriptions and request numbered output in the same order.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
         <!-- Footer -->
-        <div class="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50 border-t border-gray-200 rounded-b-lg">
+        <div class="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50 border-t border-gray-200 rounded-b-2xl">
           <button
             @click="handleClose"
-            class="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+            class="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-full hover:bg-gray-50 transition-colors font-medium"
           >
             Cancel
           </button>
           <button
             @click="handleSave"
-            class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium"
+            class="px-4 py-2 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 transition-colors font-medium"
           >
             Save Settings
           </button>

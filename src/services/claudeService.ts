@@ -20,7 +20,8 @@ export function validateApiKey(apiKey: string): boolean {
  */
 export async function cleanDescriptions(
   descriptions: string[],
-  apiKey: string
+  apiKey: string,
+  customPrompt?: string
 ): Promise<DescriptionCleaningResult> {
   try {
     // Validate user-provided API key (if not empty, it must be valid)
@@ -50,6 +51,7 @@ export async function cleanDescriptions(
       body: JSON.stringify({
         descriptions,
         userApiKey: apiKey || undefined, // Send user's API key if provided
+        customPrompt: customPrompt || undefined, // Send custom prompt if provided
       }),
     });
 

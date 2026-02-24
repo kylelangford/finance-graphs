@@ -1,20 +1,63 @@
-import { computed } from 'vue';
-import { useLocalStorage } from './useLocalStorage';
+import { computed, ref } from 'vue';
+import { settingsAPI } from '../utils/apiClient';
 
 export interface AppSettings {
   enableAICleaning: boolean;
   claudeApiKey: string;
+  customPrompt?: string;
 }
+
+const DEFAULT_PROMPT = `Clean these bank transaction descriptions to just the merchant or service name. Be as brief as possible.
+
+Rules:
+- Remove payment method prefixes (VISA, MASTERCARD, DEBIT, etc.)
+- Remove transaction codes, reference numbers, and IDs
+- Remove location unless it's part of the business name
+- Remove transaction type words (PURCHASE, POS, DDA, ACH, etc.)
+- Use proper capitalization
+
+Examples:
+- "VISA DDA PUR 1234 GOOGLE *YOUTUBE PREM" → "Google YouTube Premium"
+- "POS DEBIT STARBUCKS #12345 SAN FRANCISCO CA" → "Starbucks"
+- "ACH TRANSFER NETFLIX.COM" → "Netflix"`;
 
 const DEFAULT_SETTINGS: AppSettings = {
   enableAICleaning: false,
   claudeApiKey: '',
+  customPrompt: DEFAULT_PROMPT,
 };
 
 // Singleton settings storage
-const settings = useLocalStorage<AppSettings>('app-settings', DEFAULT_SETTINGS);
+const settings = ref<AppSettings>({ ...DEFAULT_SETTINGS });
+const isLoaded = ref(false);
 
 export function useSettings() {
+  /**
+   * Load settings from API
+   */
+  const loadSettings = async (): Promise<void> => {
+    if (isLoaded.value) return;
+
+    try {
+      settings.value = await settingsAPI.get();
+      isLoaded.value = true;
+    } catch (error) {
+      console.error('Failed to load settings:', error);
+      settings.value = { ...DEFAULT_SETTINGS };
+    }
+  };
+
+  /**
+   * Save settings to API
+   */
+  const saveSettings = async (updates: Partial<AppSettings>): Promise<void> => {
+    try {
+      settings.value = await settingsAPI.update(updates);
+    } catch (error) {
+      console.error('Failed to save settings:', error);
+    }
+  };
+
   /**
    * Get the Claude API key (from user settings or environment variable)
    */
@@ -32,36 +75,36 @@ export function useSettings() {
   /**
    * Set the Claude API key in user settings
    */
-  const setApiKey = (key: string): void => {
-    settings.value.claudeApiKey = key;
+  const setApiKey = async (key: string): Promise<void> => {
+    await saveSettings({ claudeApiKey: key });
   };
 
   /**
    * Clear the Claude API key from user settings
    */
-  const clearApiKey = (): void => {
-    settings.value.claudeApiKey = '';
+  const clearApiKey = async (): Promise<void> => {
+    await saveSettings({ claudeApiKey: '' });
   };
 
   /**
    * Toggle AI cleaning feature on/off
    */
-  const toggleAICleaning = (): void => {
-    settings.value.enableAICleaning = !settings.value.enableAICleaning;
+  const toggleAICleaning = async (): Promise<void> => {
+    await saveSettings({ enableAICleaning: !settings.value.enableAICleaning });
   };
 
   /**
    * Enable AI cleaning feature
    */
-  const enableAICleaning = (): void => {
-    settings.value.enableAICleaning = true;
+  const enableAICleaning = async (): Promise<void> => {
+    await saveSettings({ enableAICleaning: true });
   };
 
   /**
    * Disable AI cleaning feature
    */
-  const disableAICleaning = (): void => {
-    settings.value.enableAICleaning = false;
+  const disableAICleaning = async (): Promise<void> => {
+    await saveSettings({ enableAICleaning: false });
   };
 
   /**
@@ -82,20 +125,51 @@ export function useSettings() {
   /**
    * Reset all settings to defaults
    */
-  const resetSettings = (): void => {
-    settings.value = { ...DEFAULT_SETTINGS };
+  const resetSettings = async (): Promise<void> => {
+    await saveSettings(DEFAULT_SETTINGS);
   };
+
+  /**
+   * Get the custom prompt (from user settings or default)
+   */
+  const getPrompt = (): string => {
+    return settings.value.customPrompt || DEFAULT_PROMPT;
+  };
+
+  /**
+   * Set the custom prompt
+   */
+  const setPrompt = async (prompt: string): Promise<void> => {
+    await saveSettings({ customPrompt: prompt });
+  };
+
+  /**
+   * Reset prompt to default
+   */
+  const resetPrompt = async (): Promise<void> => {
+    await saveSettings({ customPrompt: DEFAULT_PROMPT });
+  };
+
+  // Auto-load settings on first use
+  if (!isLoaded.value) {
+    loadSettings();
+  }
 
   return {
     settings,
+    loadSettings,
     getApiKey,
     setApiKey,
     clearApiKey,
+    getPrompt,
+    setPrompt,
+    resetPrompt,
     toggleAICleaning,
     enableAICleaning,
     disableAICleaning,
     isAICleaningEnabled,
     canUseAIFeatures,
     resetSettings,
+    DEFAULT_PROMPT,
   };
 }

@@ -1,138 +1,112 @@
-import { type Ref } from 'vue';
-import { useLocalStorage } from './useLocalStorage';
+import { ref, type Ref } from 'vue';
 import type { CategorizationRule } from '../types/transaction';
+import { rulesAPI } from '../utils/apiClient';
 
-const DEFAULT_RULES: Omit<CategorizationRule, 'id'>[] = [
-  {
-    categoryId: 'cat-groceries',
-    keywords: ['walmart', 'kroger', 'safeway', 'whole foods', 'trader joe', 'costco', 'grocery', 'market'],
-    matchCase: false,
-    enabled: true,
-    priority: 10,
-  },
-  {
-    categoryId: 'cat-dining',
-    keywords: ['starbucks', 'coffee', 'restaurant', 'cafe', 'mcdonald', 'burger', 'pizza', 'chipotle', 'panera'],
-    matchCase: false,
-    enabled: true,
-    priority: 10,
-  },
-  {
-    categoryId: 'cat-transportation',
-    keywords: ['uber', 'lyft', 'gas', 'fuel', 'parking', 'metro', 'transit', 'taxi'],
-    matchCase: false,
-    enabled: true,
-    priority: 10,
-  },
-  {
-    categoryId: 'cat-utilities',
-    keywords: ['electric', 'water', 'internet', 'phone', 'utility', 'verizon', 'at&t', 'comcast'],
-    matchCase: false,
-    enabled: true,
-    priority: 10,
-  },
-  {
-    categoryId: 'cat-entertainment',
-    keywords: ['netflix', 'spotify', 'hulu', 'disney', 'movie', 'theater', 'concert', 'game'],
-    matchCase: false,
-    enabled: true,
-    priority: 10,
-  },
-  {
-    categoryId: 'cat-healthcare',
-    keywords: ['pharmacy', 'doctor', 'hospital', 'clinic', 'cvs', 'walgreens', 'medical', 'health'],
-    matchCase: false,
-    enabled: true,
-    priority: 10,
-  },
-  {
-    categoryId: 'cat-shopping',
-    keywords: ['amazon', 'target', 'best buy', 'walmart', 'ebay', 'store'],
-    matchCase: false,
-    enabled: true,
-    priority: 8,
-  },
-  {
-    categoryId: 'cat-income',
-    keywords: ['salary', 'payroll', 'deposit', 'payment received', 'direct deposit', 'paycheck'],
-    matchCase: false,
-    enabled: true,
-    priority: 15,
-  },
-  {
-    categoryId: 'cat-transfer',
-    keywords: ['transfer', 'withdrawal', 'atm'],
-    matchCase: false,
-    enabled: true,
-    priority: 10,
-  },
-];
-
-const rules: Ref<CategorizationRule[]> = useLocalStorage<CategorizationRule[]>('categorization-rules', []);
+const rules: Ref<CategorizationRule[]> = ref([]);
 
 export function useCategorizationRules() {
   /**
-   * Initialize default rules if none exist
+   * Initialize rules by loading from API
    */
-  const initializeDefaultRules = () => {
-    if (rules.value.length === 0) {
-      rules.value = DEFAULT_RULES.map((rule, index) => ({
-        ...rule,
-        id: `rule-${Date.now()}-${index}`,
-      }));
+  const initializeDefaultRules = async () => {
+    try {
+      rules.value = await rulesAPI.getAll();
+    } catch (error) {
+      console.error('Failed to load rules:', error);
     }
   };
 
   /**
-   * Add a new categorization rule
+   * Get rule for a specific category (1:1 relationship)
    */
-  const addRule = (rule: Omit<CategorizationRule, 'id'>): CategorizationRule => {
-    const newRule: CategorizationRule = {
-      ...rule,
-      id: `rule-${Date.now()}`,
-    };
+  const getRuleForCategory = (categoryId: string): CategorizationRule | undefined => {
+    return rules.value.find(rule => rule.categoryId === categoryId);
+  };
 
-    rules.value = [...rules.value, newRule];
-    return newRule;
+  /**
+   * Get or create a rule for a category
+   */
+  const getOrCreateRuleForCategory = async (categoryId: string): Promise<CategorizationRule | null> => {
+    const existing = getRuleForCategory(categoryId);
+    if (existing) return existing;
+
+    // Create new rule for this category
+    try {
+      const newRule = await rulesAPI.create({
+        categoryId,
+        keywords: [],
+        matchCase: false,
+        enabled: true,
+        priority: 1,
+      });
+      rules.value = [...rules.value, newRule];
+      return newRule;
+    } catch (error) {
+      console.error('Failed to create rule:', error);
+      return null;
+    }
+  };
+
+  /**
+   * Add a keyword to a category's rule
+   */
+  const addKeywordToCategory = async (categoryId: string, keyword: string): Promise<boolean> => {
+    const trimmedKeyword = keyword.trim().toLowerCase();
+    if (!trimmedKeyword) return false;
+
+    const rule = await getOrCreateRuleForCategory(categoryId);
+    if (!rule) return false;
+
+    // Check if keyword already exists
+    if (rule.keywords.some(k => k.toLowerCase() === trimmedKeyword)) {
+      return true; // Already exists, consider it success
+    }
+
+    const updatedKeywords = [...rule.keywords, trimmedKeyword];
+    return updateRule(rule.id, { keywords: updatedKeywords });
+  };
+
+  /**
+   * Remove a keyword from a category's rule
+   */
+  const removeKeywordFromCategory = async (categoryId: string, keyword: string): Promise<boolean> => {
+    const rule = getRuleForCategory(categoryId);
+    if (!rule) return false;
+
+    const updatedKeywords = rule.keywords.filter(k => k !== keyword);
+    return updateRule(rule.id, { keywords: updatedKeywords });
   };
 
   /**
    * Update an existing rule
    */
-  const updateRule = (id: string, updates: Partial<Omit<CategorizationRule, 'id'>>): boolean => {
-    const index = rules.value.findIndex(rule => rule.id === id);
-    if (index === -1) {
+  const updateRule = async (id: string, updates: Partial<Omit<CategorizationRule, 'id'>>): Promise<boolean> => {
+    try {
+      const updatedRule = await rulesAPI.update(id, updates);
+      const index = rules.value.findIndex(rule => rule.id === id);
+      if (index !== -1) {
+        rules.value[index] = updatedRule;
+        rules.value = [...rules.value];
+      }
+      return true;
+    } catch (error) {
+      console.error('Failed to update rule:', error);
       return false;
     }
-
-    rules.value[index] = {
-      ...rules.value[index],
-      ...updates,
-    };
-
-    // Trigger reactivity
-    rules.value = [...rules.value];
-    return true;
   };
 
   /**
    * Delete a rule
    */
-  const deleteRule = (id: string): boolean => {
-    const index = rules.value.findIndex(rule => rule.id === id);
-    if (index === -1) {
+  const deleteRule = async (id: string): Promise<boolean> => {
+    try {
+      await rulesAPI.delete(id);
+      rules.value = rules.value.filter(rule => rule.id !== id);
+      return true;
+    } catch (error) {
+      console.error('Failed to delete rule:', error);
       return false;
     }
-
-    rules.value = rules.value.filter(rule => rule.id !== id);
-    return true;
-  };
-
-  /**
-   * Get rules for a specific category
-   */
-  const getRulesForCategory = (categoryId: string): CategorizationRule[] => {
-    return rules.value.filter(rule => rule.categoryId === categoryId);
   };
 
   /**
@@ -143,36 +117,23 @@ export function useCategorizationRules() {
   };
 
   /**
-   * Enable or disable a rule
+   * Get keywords for a category
    */
-  const toggleRule = (id: string): boolean => {
-    const rule = rules.value.find(r => r.id === id);
-    if (!rule) {
-      return false;
-    }
-
-    return updateRule(id, { enabled: !rule.enabled });
-  };
-
-  /**
-   * Reset to default rules only
-   */
-  const resetToDefaults = (): void => {
-    rules.value = DEFAULT_RULES.map((rule, index) => ({
-      ...rule,
-      id: `rule-${Date.now()}-${index}`,
-    }));
+  const getKeywordsForCategory = (categoryId: string): string[] => {
+    const rule = getRuleForCategory(categoryId);
+    return rule?.keywords || [];
   };
 
   return {
     rules,
     initializeDefaultRules,
-    addRule,
+    getRuleForCategory,
+    getOrCreateRuleForCategory,
+    addKeywordToCategory,
+    removeKeywordFromCategory,
+    getKeywordsForCategory,
     updateRule,
     deleteRule,
-    getRulesForCategory,
     getRules,
-    toggleRule,
-    resetToDefaults,
   };
 }

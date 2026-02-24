@@ -62,7 +62,7 @@ if (typeof window !== 'undefined') {
     <button
       type="button"
       @click="toggleDropdown"
-      class="inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+      class="inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-300 rounded-full hover:bg-gray-50 transition-colors text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
     >
       <CategoryBadge v-if="selectedCategory" :category="selectedCategory" size="sm" />
       <span v-else class="text-gray-500">Select category</span>
@@ -73,7 +73,7 @@ if (typeof window !== 'undefined') {
 
     <div
       v-if="isOpen"
-      class="absolute z-10 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg max-h-80 overflow-hidden"
+      class="absolute z-10 mt-1 w-64 bg-white border border-gray-200 rounded-2xl shadow-lg max-h-80 overflow-hidden"
     >
       <!-- Search input -->
       <div class="p-2 border-b border-gray-200">
@@ -81,7 +81,7 @@ if (typeof window !== 'undefined') {
           v-model="searchQuery"
           type="text"
           placeholder="Search categories..."
-          class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          class="w-full px-3 py-2 text-sm border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500"
           @click.stop
         />
       </div>
