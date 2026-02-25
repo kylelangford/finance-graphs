@@ -1,8 +1,50 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import LoginModal from './LoginModal.vue';
 
 const showLoginModal = ref(false);
+
+// Waitlist form state
+const waitlistEmail = ref('');
+const waitlistLoading = ref(false);
+const waitlistMessage = ref('');
+const waitlistError = ref(false);
+
+const isValidEmail = computed(() => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(waitlistEmail.value);
+});
+
+async function submitWaitlist() {
+  if (!isValidEmail.value || waitlistLoading.value) return;
+
+  waitlistLoading.value = true;
+  waitlistMessage.value = '';
+  waitlistError.value = false;
+
+  try {
+    const response = await fetch('/api/waitlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: waitlistEmail.value }),
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      waitlistMessage.value = data.message;
+      waitlistEmail.value = '';
+    } else {
+      waitlistError.value = true;
+      waitlistMessage.value = data.error || 'Something went wrong. Please try again.';
+    }
+  } catch {
+    waitlistError.value = true;
+    waitlistMessage.value = 'Unable to connect. Please try again.';
+  } finally {
+    waitlistLoading.value = false;
+  }
+}
 </script>
 
 <template>
@@ -38,12 +80,12 @@ const showLoginModal = ref(false);
         Import your bank statements, automatically categorize transactions, and gain insights into where your money goes. Simple, private, and powerful.
       </p>
       <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
-        <button
-          @click="showLoginModal = true"
+        <a
+          href="#signup"
           class="px-8 py-4 bg-indigo-600 text-white font-semibold rounded-full hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200"
         >
           Get Started
-        </button>
+        </a>
         <a
           href="#features"
           class="px-8 py-4 text-gray-700 font-semibold hover:text-indigo-600 transition-colors"
@@ -64,7 +106,7 @@ const showLoginModal = ref(false);
             Everything you need to track spending
           </h2>
           <p class="text-lg text-gray-600 max-w-2xl mx-auto">
-            Powerful features that make managing your finances effortless.
+            Powerful features that make managing your spending effortless.
           </p>
         </div>
 
@@ -76,7 +118,7 @@ const showLoginModal = ref(false);
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
               </svg>
             </div>
-            <h3 class="text-xl font-semibold text-gray-900 mb-3">Easy CSV Import</h3>
+            <h3 class="text-xl font-semibold text-gray-900 mb-3">Import Bank Statements</h3>
             <p class="text-gray-600">
               Import transactions from any bank. Just drag and drop your CSV file and we'll handle the rest.
             </p>
@@ -91,7 +133,7 @@ const showLoginModal = ref(false);
             </div>
             <h3 class="text-xl font-semibold text-gray-900 mb-3">Smart Categorization</h3>
             <p class="text-gray-600">
-              Automatically categorize transactions with customizable rules. The more you use it, the smarter it gets.
+              Automatically categorize transactions with customizable rules. The more you use it, the faster it gets.
             </p>
           </div>
 
@@ -175,22 +217,49 @@ const showLoginModal = ref(false);
     </section>
 
     <!-- CTA Section -->
-    <section class="py-24 bg-indigo-600">
+    <section id="signup" class="py-24 bg-indigo-600">
       <div class="max-w-4xl mx-auto px-4 text-center">
         <h2 class="text-3xl md:text-4xl font-bold text-white mb-4">
           Ready to take control?
         </h2>
         <p class="text-xl text-indigo-100 mb-8">
-          Start tracking your spending today.
+          Join the waitlist to get early access when we launch.
         </p>
-        <button
-          @click="showLoginModal = true"
-          class="px-8 py-4 bg-white text-indigo-600 font-semibold rounded-full hover:bg-indigo-50 transition-colors shadow-lg"
-        >
-          Get Started
-        </button>
-        <p class="mt-4 text-indigo-200 text-sm">
-          Currently available by invitation only.
+
+        <!-- Waitlist Signup Form -->
+        <form @submit.prevent="submitWaitlist" class="max-w-md mx-auto">
+          <div class="flex flex-col sm:flex-row gap-3">
+            <input
+              v-model="waitlistEmail"
+              type="email"
+              placeholder="Enter your email"
+              class="flex-1 px-5 py-4 rounded-full text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-white"
+              :disabled="waitlistLoading"
+            />
+            <button
+              type="submit"
+              :disabled="!isValidEmail || waitlistLoading"
+              class="px-8 py-4 bg-white text-indigo-600 font-semibold rounded-full hover:bg-indigo-50 transition-colors shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span v-if="waitlistLoading" class="flex items-center justify-center gap-2">
+                <svg class="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Joining...
+              </span>
+              <span v-else>Join Waitlist</span>
+            </button>
+          </div>
+
+          <!-- Status Message -->
+          <p v-if="waitlistMessage" class="mt-4 text-sm" :class="waitlistError ? 'text-red-200' : 'text-green-200'">
+            {{ waitlistMessage }}
+          </p>
+        </form>
+
+        <p class="mt-6 text-indigo-200 text-sm">
+          Already have access? <button @click="showLoginModal = true" class="underline hover:text-white">Sign in</button>
         </p>
       </div>
     </section>
@@ -208,7 +277,7 @@ const showLoginModal = ref(false);
             <span class="text-white font-semibold">Spend Tracker</span>
           </div>
           <p class="text-sm">
-            Built with Vue, Astro, and Claude AI
+            &copy; Precision Frontend
           </p>
         </div>
       </div>
