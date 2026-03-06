@@ -9,6 +9,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: [];
+  deleteAllTransactions: [];
 }>();
 
 const { settings, setApiKey, clearApiKey, toggleAICleaning, getPrompt, setPrompt, resetPrompt, DEFAULT_PROMPT } = useSettings();
@@ -94,6 +95,14 @@ const handleTestApiKey = async () => {
 const handleClearApiKey = () => {
   apiKeyInput.value = '';
   testResult.value = null;
+};
+
+const handleDeleteAllTransactions = () => {
+  if (!confirm('Are you sure you want to delete ALL transactions? Your categories will not be affected. This cannot be undone.')) {
+    return;
+  }
+  emit('deleteAllTransactions');
+  emit('close');
 };
 </script>
 
@@ -252,6 +261,27 @@ const handleClearApiKey = () => {
                 <p class="text-gray-500">
                   <strong>Note:</strong> The system will automatically add numbered input descriptions and request numbered output in the same order.
                 </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Danger Zone -->
+          <div class="space-y-4 pt-6 border-t border-gray-200">
+            <h3 class="text-lg font-semibold text-red-600">Danger Zone</h3>
+            <div class="p-4 bg-red-50 rounded-2xl border border-red-200">
+              <div class="flex items-center justify-between">
+                <div>
+                  <div class="font-medium text-gray-900">Delete all transactions</div>
+                  <div class="text-sm text-gray-600 mt-1">
+                    Permanently remove all transactions. Categories and rules will not be affected.
+                  </div>
+                </div>
+                <button
+                  @click="handleDeleteAllTransactions"
+                  class="px-4 py-2 bg-red-600 text-white rounded-full hover:bg-red-700 transition-colors font-medium whitespace-nowrap"
+                >
+                  Delete All
+                </button>
               </div>
             </div>
           </div>

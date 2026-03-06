@@ -107,25 +107,17 @@ const getTransactionKey = (t: Transaction) => {
 };
 
 const handleUpload = async (uploadedTransactions: Transaction[]) => {
-  // Step 0: Deduplicate against existing transactions
+  // Quick client-side pre-filter against already-loaded transactions
+  // Server will do the authoritative duplicate check
   const existingKeys = new Set(transactions.value.map(getTransactionKey));
-  const uniqueTransactions = uploadedTransactions.filter(t => !existingKeys.has(getTransactionKey(t)));
-  const duplicateCount = uploadedTransactions.length - uniqueTransactions.length;
+  const preFilteredTransactions = uploadedTransactions.filter(t => !existingKeys.has(getTransactionKey(t)));
 
-  if (duplicateCount > 0) {
-    addNotification(
-      `Skipped ${duplicateCount} duplicate transaction${duplicateCount !== 1 ? 's' : ''}`,
-      'info',
-      3000
-    );
-  }
-
-  if (uniqueTransactions.length === 0) {
-    addNotification('All transactions were duplicates', 'warning', 3000);
+  if (preFilteredTransactions.length === 0) {
+    addNotification('All transactions appear to be duplicates', 'warning', 3000);
     return;
   }
 
-  let processedTransactions = uniqueTransactions;
+  let processedTransactions = preFilteredTransactions;
 
   // Step 1: Clean descriptions with AI (if enabled)
   if (canUseAIFeatures.value) {
@@ -179,14 +171,31 @@ const saveTransactionsWithRules = async (processedTransactions: Transaction[]) =
   );
 
   try {
-    const savedTransactions = await transactionsAPI.create(categorizedTransactions);
-    // Append new transactions to existing ones (new ones first)
-    transactions.value = [...savedTransactions, ...transactions.value];
+    const result = await transactionsAPI.create(categorizedTransactions);
 
-    const categorizedCount = savedTransactions.filter(t => t.category).length;
+    // Handle import result with duplicate detection
+    if (result.skipped > 0) {
+      addNotification(
+        `Skipped ${result.skipped} duplicate transaction${result.skipped !== 1 ? 's' : ''}`,
+        'info',
+        3000
+      );
+    }
+
+    if (result.imported === 0) {
+      if (result.skipped > 0) {
+        addNotification('All transactions were duplicates', 'warning', 3000);
+      }
+      return;
+    }
+
+    // Append new transactions to existing ones (new ones first)
+    transactions.value = [...result.transactions, ...transactions.value];
+
+    const categorizedCount = result.transactions.filter(t => t.category).length;
     if (categorizedCount > 0) {
       addNotification(
-        `Auto-categorized ${categorizedCount} of ${savedTransactions.length} transaction${savedTransactions.length !== 1 ? 's' : ''}`,
+        `Auto-categorized ${categorizedCount} of ${result.imported} transaction${result.imported !== 1 ? 's' : ''}`,
         'info',
         3000
       );
@@ -300,10 +309,6 @@ const bulkDeleteTransactions = async (transactionIds: string[]) => {
 };
 
 const deleteAllTransactions = async () => {
-  if (!confirm('Are you sure you want to delete ALL transactions? Your categories will not be affected. This cannot be undone.')) {
-    return;
-  }
-
   console.log('Deleting all transactions...');
 
   try {
@@ -588,15 +593,6 @@ onMounted(async () => {
               <span class="font-medium text-gray-900">Settings</span>
             </button>
             <button
-              @click="deleteAllTransactions(); showHeaderMenu = false"
-              class="w-full flex items-center gap-3 px-4 py-3 hover:bg-red-50 transition-colors text-left group border-t border-gray-100"
-            >
-              <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-              <span class="font-medium text-gray-900">Delete All Transactions</span>
-            </button>
-            <button
               @click="handleLogout"
               class="w-full flex items-center gap-3 px-4 py-3 hover:bg-red-50 transition-colors text-left group border-t border-gray-100"
             >
@@ -670,6 +666,7 @@ onMounted(async () => {
       <SettingsModal
         :is-open="showSettings"
         @close="showSettings = false"
+        @delete-all-transactions="deleteAllTransactions"
       />
 
       <!-- Spending Insights Modal -->

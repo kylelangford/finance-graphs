@@ -2,12 +2,27 @@ import type { APIRoute } from 'astro';
 import { db } from '../../../db/client';
 import { transactions } from '../../../db/schema';
 import { requireAuth } from '../../../utils/auth';
-import { eq, and, desc, lt, or, inArray } from 'drizzle-orm';
+import { eq, and, desc, lt, or, inArray, gte, lte } from 'drizzle-orm';
 
 // Force dynamic rendering - no caching
 export const prerender = false;
 
 const DEFAULT_PAGE_SIZE = 50;
+
+// Generate a fingerprint for duplicate detection
+function getTransactionFingerprint(t: {
+  date: string;
+  originalDescription?: string | null;
+  description: string;
+  amount: number | string;
+}): string {
+  // Use originalDescription if available (raw from CSV), otherwise use description
+  const desc = (t.originalDescription || t.description || '').toLowerCase().trim();
+  const amount = typeof t.amount === 'string' ? parseFloat(t.amount) : t.amount;
+  // Round to 2 decimal places to handle floating point issues
+  const normalizedAmount = Math.round(amount * 100) / 100;
+  return `${t.date}|${desc}|${normalizedAmount}`;
+}
 
 // GET /api/transactions - List transactions with cursor-based pagination
 // Query params:
@@ -112,7 +127,7 @@ export const GET: APIRoute = async ({ request, cookies }) => {
   }
 };
 
-// POST /api/transactions - Create new transaction(s)
+// POST /api/transactions - Create new transaction(s) with duplicate detection
 export const POST: APIRoute = async ({ request, cookies }) => {
   try {
     const userId = await requireAuth(cookies);
@@ -127,21 +142,89 @@ export const POST: APIRoute = async ({ request, cookies }) => {
     // Support both single transaction and batch import
     const transactionsToCreate = Array.isArray(body) ? body : [body];
 
-    const newTransactions = await db.insert(transactions).values(
-      transactionsToCreate.map(t => ({
-        userId,
+    if (transactionsToCreate.length === 0) {
+      return new Response(JSON.stringify({
+        imported: 0,
+        skipped: 0,
+        duplicates: [],
+        transactions: [],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Get date range from incoming transactions for efficient querying
+    const dates = transactionsToCreate.map(t => t.date);
+    const minDate = dates.reduce((a, b) => a < b ? a : b);
+    const maxDate = dates.reduce((a, b) => a > b ? a : b);
+
+    // Fetch existing transactions in the date range
+    const existingTransactions = await db.query.transactions.findMany({
+      where: and(
+        eq(transactions.userId, userId),
+        gte(transactions.date, minDate),
+        lte(transactions.date, maxDate)
+      ),
+      columns: {
+        id: true,
+        date: true,
+        description: true,
+        originalDescription: true,
+        amount: true,
+      },
+    });
+
+    // Build set of existing fingerprints for O(1) lookup
+    const existingFingerprints = new Set(
+      existingTransactions.map(t => getTransactionFingerprint({
         date: t.date,
+        originalDescription: t.originalDescription,
         description: t.description,
-        amount: t.amount.toString(),
-        transactionType: t.transactionType,
-        categoryId: t.category || null,
-        originalDescription: t.originalDescription || null,
-        rawData: t.raw || null,
+        amount: t.amount,
       }))
-    ).returning();
+    );
+
+    // Separate new transactions from duplicates
+    const newTransactions: typeof transactionsToCreate = [];
+    const duplicates: Array<{ date: string; description: string; amount: number }> = [];
+    const seenInBatch = new Set<string>(); // Also dedupe within the batch itself
+
+    for (const t of transactionsToCreate) {
+      const fingerprint = getTransactionFingerprint(t);
+
+      if (existingFingerprints.has(fingerprint) || seenInBatch.has(fingerprint)) {
+        duplicates.push({
+          date: t.date,
+          description: t.originalDescription || t.description,
+          amount: typeof t.amount === 'string' ? parseFloat(t.amount) : t.amount,
+        });
+      } else {
+        newTransactions.push(t);
+        seenInBatch.add(fingerprint);
+      }
+    }
+
+    // Insert only non-duplicate transactions
+    let insertedTransactions: any[] = [];
+
+    if (newTransactions.length > 0) {
+      insertedTransactions = await db.insert(transactions).values(
+        newTransactions.map(t => ({
+          userId,
+          date: t.date,
+          description: t.description,
+          amount: t.amount.toString(),
+          transactionType: t.transactionType,
+          categoryId: t.category || null,
+          originalDescription: t.originalDescription || null,
+          rawData: t.raw || null,
+        }))
+      ).returning();
+    }
 
     // Transform to match frontend format
-    const formattedTransactions = newTransactions.map(t => ({
+    const formattedTransactions = insertedTransactions.map(t => ({
       id: t.id,
       date: t.date,
       description: t.description,
@@ -152,7 +235,12 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       raw: t.rawData as Record<string, any> || undefined,
     }));
 
-    return new Response(JSON.stringify(formattedTransactions), {
+    return new Response(JSON.stringify({
+      imported: newTransactions.length,
+      skipped: duplicates.length,
+      duplicates: duplicates.slice(0, 10), // Limit to first 10 for response size
+      transactions: formattedTransactions,
+    }), {
       status: 201,
       headers: { 'Content-Type': 'application/json' },
     });

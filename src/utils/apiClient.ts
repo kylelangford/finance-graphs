@@ -47,6 +47,14 @@ export interface PaginationParams {
   cursorId?: string | null;
 }
 
+// Import result types
+export interface ImportResult {
+  imported: number;
+  skipped: number;
+  duplicates: Array<{ date: string; description: string; amount: number }>;
+  transactions: Transaction[];
+}
+
 // Transactions API
 export const transactionsAPI = {
   /**
@@ -98,12 +106,11 @@ export const transactionsAPI = {
     return allTransactions;
   },
 
-  async create(transactions: Transaction | Transaction[]): Promise<Transaction[]> {
-    const result = await fetchJSON<Transaction | Transaction[]>('/api/transactions', {
+  async create(transactions: Transaction | Transaction[]): Promise<ImportResult> {
+    return fetchJSON<ImportResult>('/api/transactions', {
       method: 'POST',
       body: JSON.stringify(transactions),
     });
-    return Array.isArray(result) ? result : [result];
   },
 
   async update(id: string, updates: Partial<Transaction>): Promise<Transaction> {
